@@ -1,111 +1,146 @@
+import 'dart:developer';
+
+import 'package:awesome_notifications/awesome_notifications.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:timezone/data/latest_all.dart' as tz;
-import 'package:timezone/timezone.dart' as tz;
-import 'package:permission_handler/permission_handler.dart';
 
-final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-    FlutterLocalNotificationsPlugin();
+class NotificationService {
+  // Define notification channels
+  static const String _channelKey = 'reminder_channel';
+  static const String _channelGroupKey = 'reminder_channel_group';
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  // ✅ Initialize awesome notifications
+  static Future<void> init() async {
+    await AwesomeNotifications().initialize(
+      null, // no default icon
+      [
+        NotificationChannel(
+          channelKey: _channelKey,
+          channelName: 'Reminder Notifications',
+          channelDescription: 'Notification channel for reminders',
+          defaultColor: Colors.blue,
+          ledColor: Colors.blue,
+          importance: NotificationImportance.High,
+          channelShowBadge: true,
+          locked: true, // Makes notification persist on screen
+          defaultRingtoneType: DefaultRingtoneType.Notification,
+          playSound: true,
+          enableVibration: true,
+          enableLights: true,
+        )
+      ],
+      channelGroups: [
+        NotificationChannelGroup(
+          channelGroupKey: _channelGroupKey,
+          channelGroupName: 'Reminder Group',
+        )
+      ],
+      debug: true,
+    );
 
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
-        appBar: AppBar(title: const Text('Daily Reminder')),
-        body: const Center(
-          child: ElevatedButton(
-            onPressed: scheduleDailyNotification,
-            child: Text('Schedule Daily Reminder at 2 PM'),
-          ),
-        ),
-      ),
+    // Set up notification action listeners
+    AwesomeNotifications().setListeners(
+      onActionReceivedMethod: onActionReceivedMethod,
+      onNotificationCreatedMethod: onNotificationCreatedMethod,
+      onNotificationDisplayedMethod: onNotificationDisplayedMethod,
+      onDismissActionReceivedMethod: onDismissActionReceivedMethod,
     );
   }
-}
 
-// ✅ Initialize Notifications
-Future<void> initNotifications() async {
-  // Initialize timezone database
-  tz.initializeTimeZones();
+  // ✅ Check for pending notifications (useful for debugging)
+  static Future<void> checkPendingNotifications() async {
+    final List<NotificationModel> pendingNotifications =
+        await AwesomeNotifications().listScheduledNotifications();
+    log('Pending notifications: ${pendingNotifications.length}');
+    for (var notification in pendingNotifications) {}
+  }
 
-  const AndroidInitializationSettings androidSettings =
-      AndroidInitializationSettings('@mipmap/ic_launcher');
+  // ✅ Request notification permissions
+  static Future<void> requestPermissions() async {
+    await AwesomeNotifications().requestPermissionToSendNotifications();
+    bool isAllowed = await AwesomeNotifications().isNotificationAllowed();
+    log('Notification Permission: ${isAllowed ? 'Granted' : 'Denied'}');
+  }
 
-  const DarwinInitializationSettings iosSettings = DarwinInitializationSettings(
-    requestAlertPermission: true,
-    requestBadgePermission: true,
-    requestSoundPermission: true,
-  );
+  // ✅ Schedule a notification with a specific date and time
+  static Future<void> scheduleReminder(
+      int id, String title, String body, DateTime dateTime) async {
+    log('Current Time: ${DateTime.now()}');
+    log('Scheduling notification for: $dateTime');
 
-  const InitializationSettings settings = InitializationSettings(
-    android: androidSettings,
-    iOS: iosSettings,
-  );
+    bool success = await AwesomeNotifications().createNotification(
+      content: NotificationContent(
+        id: id,
+        channelKey: _channelKey,
+        title: title,
+        body: body,
+        notificationLayout: NotificationLayout.Default,
+        wakeUpScreen: true,
+        category: NotificationCategory.Reminder,
+        displayOnBackground: true,
+        displayOnForeground: true,
+        criticalAlert: true,
+      ),
+      schedule: NotificationCalendar.fromDate(date: dateTime),
+    );
 
-  await flutterLocalNotificationsPlugin.initialize(
-    settings,
-    onDidReceiveNotificationResponse: (NotificationResponse response) {
-      print('Notification clicked: ${response.payload}');
-    },
-  );
-}
-
-// ✅ Schedule a Daily Notification at 2 PM
-Future<void> scheduleDailyNotification() async {
-  try {
-    // Request permissions
-    if (await Permission.notification.isDenied) {
-      await Permission.notification.request();
+    if (success) {
+      log('Notification scheduled successfully.');
+      await checkPendingNotifications();
+    } else {
+      log('Failed to schedule notification');
     }
+  }
 
-    // Define 2 PM time
-    final now = tz.TZDateTime.now(tz.local);
-    final scheduledTime = tz.TZDateTime(
-      tz.local,
-      now.year,
-      now.month,
-      now.day,
-      14, // 2 PM (24-hour format)
-      57, // 00 minutes
+  // ✅ Show an instant notification immediately
+  static Future<void> showInstantReminder(
+      int id, String title, String body) async {
+    await AwesomeNotifications().createNotification(
+      content: NotificationContent(
+        id: id,
+        channelKey: _channelKey,
+        title: title,
+        body: body,
+        notificationLayout: NotificationLayout.Default,
+        wakeUpScreen: true,
+        category: NotificationCategory.Message,
+        displayOnBackground: true,
+        displayOnForeground: true,
+      ),
     );
+    log('Instant notification sent.');
+  }
 
-    // If 2 PM has already passed today, schedule for tomorrow
-    final notificationTime = scheduledTime.isBefore(now)
-        ? scheduledTime.add(const Duration(days: 1))
-        : scheduledTime;
+  // ✅ Cancel all pending notifications
+  static Future<void> cancelAllNotifications() async {
+    await AwesomeNotifications().cancelAllSchedules();
 
-    const AndroidNotificationDetails androidDetails =
-        AndroidNotificationDetails(
-      'daily_reminder_channel',
-      'Daily Reminders',
-      channelDescription: 'Reminds you daily at 2 PM',
-      importance: Importance.max,
-      priority: Priority.high,
-    );
+    log('All notifications canceled');
+  }
 
-    const NotificationDetails notificationDetails = NotificationDetails(
-      android: androidDetails,
-      iOS: DarwinNotificationDetails(),
-    );
+  // Required methods for AwesomeNotifications listeners
 
-    // Schedule notification daily
-    await flutterLocalNotificationsPlugin.zonedSchedule(
-      0, // Notification ID (must be unique per notification)
-      'Daily Reminder',
-      'This is your reminder for 2 PM!',
-      notificationTime,
-      notificationDetails,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time, // Repeats daily
-    );
+  // Triggered when a notification is created
+  static Future<void> onNotificationCreatedMethod(
+      ReceivedNotification receivedNotification) async {
+    log('Notification created: ${receivedNotification.id}');
+  }
 
-    print('Notification scheduled for $notificationTime');
-  } catch (e) {
-    print('Error scheduling notification: $e');
+  // Triggered when a notification is displayed
+  static Future<void> onNotificationDisplayedMethod(
+      ReceivedNotification receivedNotification) async {
+    log('Notification displayed: ${receivedNotification.id}');
+  }
+
+  // Triggered when user taps on a notification
+  static Future<void> onActionReceivedMethod(
+      ReceivedAction receivedAction) async {
+    log('Notification action received: ${receivedAction.id}');
+    // You can navigate to a specific screen here if needed
+  }
+
+  // Triggered when user dismisses a notification
+  static Future<void> onDismissActionReceivedMethod(
+      ReceivedAction receivedAction) async {
+    log('Notification dismissed: ${receivedAction.id}');
   }
 }

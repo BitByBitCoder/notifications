@@ -2,7 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/material.dart';
-import 'firebase_options.dart';
+import '../firebase_options.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -20,7 +20,7 @@ class NotificationService {
     importance: Importance.high,
   );
 
-  Future<void> init() async {
+   Future<void> init() async {
     // Initialize Firebase first
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -32,10 +32,8 @@ class NotificationService {
     // Set background message handler
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-    // Initialize local notifications
     await _initializeLocalNotifications();
 
-    // Setup notification handlers
     await _setupNotificationHandlers();
   }
 
@@ -46,7 +44,6 @@ class NotificationService {
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(_channel);
 
-    // Initialize local notifications settings
     const initializationSettings = InitializationSettings(
       android: AndroidInitializationSettings('@mipmap/ic_launcher'),
       iOS: DarwinInitializationSettings(),
@@ -59,7 +56,6 @@ class NotificationService {
   }
 
   Future<void> _setupNotificationHandlers() async {
-    // Set foreground notification options for iOS
     await _firebaseMessaging.setForegroundNotificationPresentationOptions(
       alert: true,
       badge: true,
